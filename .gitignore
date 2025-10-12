@@ -3,6 +3,9 @@ node_modules
 
 # yarn error logs
 yarn-error.log
+package-lock.json
+yarn-debug.log*
+.pnpm-debug.log*
 
 # Environment varibales
 .env*
