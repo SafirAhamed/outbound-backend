@@ -4,6 +4,7 @@ const userRoute = require('./user.route');
 const docsRoute = require('./docs.route');
 const tourRoute = require('./tour.route');
 const countryRoute = require('./country.route');
+const bookRoute = require('./book.route');
 const config = require('../../config/config');
 
 const router = express.Router();
@@ -24,6 +25,10 @@ const defaultRoutes = [
   {
     path: '/country',
     route: countryRoute,
+  },
+  {
+    path: '/books',
+    route: bookRoute,
   },
 ];
 
