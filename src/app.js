@@ -27,6 +27,10 @@ app.use(helmet());
 // parse json request body
 app.use(express.json());
 
+// Razorpay webhook: use raw body parser for the webhook endpoint so signatures can be verified
+const webhookController = require('./controllers/webhook.controller');
+app.post('/v1/webhooks/razorpay', express.raw({ type: 'application/json' }), webhookController.razorpayWebhook);
+
 // parse urlencoded request body
 app.use(express.urlencoded({ extended: true }));
 
