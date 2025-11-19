@@ -19,7 +19,7 @@ const defaultRoutes = [
     route: userRoute,
   },
   {
-    path: '/tour',
+    path: '/tours',
     route: tourRoute,
   },
   {

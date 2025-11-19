@@ -1,9 +1,10 @@
-const Tour = require('../models/tour.model');
-const { upload, uploadToS3 } = require('../utils/s3Upload'); // Import utilities
 const Razorpay = require('razorpay');
 const crypto = require('crypto');
+const { upload, uploadToS3 } = require('../utils/s3Upload'); // Import utilities
+const Tour = require('../models/tour.model');
 const config = require('../config/config');
 const Payment = require('../models/payment.model');
+const logger = require('../config/logger');
 
 // Lazily create Razorpay instance so app can start without env vars during development
 const getRazorpayInstance = () => {
@@ -32,25 +33,24 @@ exports.createTourWithPhoto = async (req, res) => {
     // 2. Create the Tour object using the returned public URL
     const newTour = await Tour.create({
       ...req.body, // Include other tour data from the form
-      imageCover: uploadResult.publicUrl // Save the public URL to MongoDB
+      imageCover: uploadResult.publicUrl, // Save the public URL to MongoDB
     });
 
     // 3. Send success response
     res.status(201).json({
       status: 'success',
       data: {
-        tour: newTour
-      }
+        tour: newTour,
+      },
     });
   } catch (err) {
     console.error('Create Tour Error:', err.message);
-    res.status(500).json({ 
-      status: 'error', 
-      message: 'Image upload or tour creation failed. Check AWS credentials/Bucket policy.' 
+    res.status(500).json({
+      status: 'error',
+      message: 'Image upload or tour creation failed. Check AWS credentials/Bucket policy.',
     });
   }
 };
-
 
 // Function to get all tours
 exports.getAllTours = async (req, res) => {
@@ -63,14 +63,14 @@ exports.getAllTours = async (req, res) => {
       status: 'success',
       results: tours.length, // Good practice to include the count
       data: {
-        tours // Array of tour objects
-      }
+        tours, // Array of tour objects
+      },
     });
   } catch (err) {
     // Handle any database or server errors
     res.status(404).json({
       status: 'fail',
-      message: err
+      message: err,
     });
   }
 };
@@ -83,16 +83,26 @@ exports.createRazorpayOrder = async (req, res) => {
     if (!user) return res.status(401).json({ status: 'fail', message: 'Please authenticate' });
 
     const tourId = req.params.tourId;
+    logger.info(`User ${user.id} is creating a Razorpay order for tour ${tourId}`);
     const tour = await Tour.findById(tourId);
     if (!tour) return res.status(404).json({ status: 'fail', message: 'Tour not found' });
 
     // Razorpay expects amount in the smallest currency unit (paise)
     const amount = Math.round((tour.price || 0) * 100);
 
+    // create a short receipt id (Razorpay requires length <= 40)
+    const makeReceipt = (tourId, userId) => {
+      const t = String(tourId).slice(-8);
+      const u = String(userId).slice(-8);
+      const ts = Date.now().toString().slice(-5);
+      const receipt = `rcpt_${t}_${u}_${ts}`; // typically <= 40 chars
+      return receipt.slice(0, 40);
+    };
+
     const options = {
       amount,
       currency: 'INR',
-      receipt: `rcpt_${tour._id}_${user.id}`,
+      receipt: makeReceipt(tour._id, user.id),
       payment_capture: 1,
     };
 
@@ -101,7 +111,10 @@ exports.createRazorpayOrder = async (req, res) => {
       return res.status(500).json({ status: 'error', message: 'Razorpay keys not configured on server' });
     }
 
+    logger.info(`Razorpay instance created.`);
+    logger.info(`Razorpay order creation request: ${JSON.stringify(options)}`);
     const order = await razorpay.orders.create(options);
+    logger.info(`Razorpay order creation response: ${JSON.stringify(order)}`);
 
     // persist a Payment record in 'created' state
     await Payment.create({
@@ -114,10 +127,14 @@ exports.createRazorpayOrder = async (req, res) => {
     });
 
     // send order + key id so the client can open checkout
-    res.status(201).json({ status: 'success', data: { order, keyId: config.razorpay.keyId || process.env.RAZORPAY_KEY_ID } });
+    res
+      .status(201)
+      .json({ status: 'success', data: { order, keyId: config.razorpay.keyId || process.env.RAZORPAY_KEY_ID } });
   } catch (err) {
-    console.error('Razorpay create order error:', err.message);
-    res.status(500).json({ status: 'error', message: 'Unable to create payment order' });
+    // If Razorpay returned a structured error, include its description when possible
+    const errMsg = err && err.error && err.error.description ? err.error.description : (err && err.message) || 'Unable to create payment order';
+    logger.error('Razorpay create order error:', err);
+    res.status(500).json({ status: 'error', message: errMsg });
   }
 };
 
@@ -130,7 +147,10 @@ exports.verifyRazorpayPayment = async (req, res) => {
     }
 
     const secret = config.razorpay.keySecret || process.env.RAZORPAY_KEY_SECRET;
-    const generated_signature = crypto.createHmac('sha256', secret).update(`${razorpay_order_id}|${razorpay_payment_id}`).digest('hex');
+    const generated_signature = crypto
+      .createHmac('sha256', secret)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest('hex');
 
     if (generated_signature !== razorpay_signature) {
       return res.status(400).json({ status: 'fail', message: 'Invalid payment signature' });
