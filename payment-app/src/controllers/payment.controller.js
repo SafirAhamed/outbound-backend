@@ -1,5 +1,5 @@
 const { validateWebhookSignature } = require('razorpay/dist/utils/razorpay-utils');
-const config = require('../config');
+const config = require('../config/config');
 const { paymentService, orderService } = require('../services');
 
 let razorpay;

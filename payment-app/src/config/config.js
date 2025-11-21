@@ -28,4 +28,12 @@ module.exports = {
   mongodbUri: env.MONGODB_URL,
   razorpayKeyId: env.RAZORPAY_KEY_ID,
   razorpayKeySecret: env.RAZORPAY_KEY_SECRET,
+  mongoose: {
+    url: env.MONGODB_URL + (env.NODE_ENV === 'test' ? '-test' : ''),
+    options: {
+      useCreateIndex: true,
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    },
+  },
 };
