@@ -1,50 +1,123 @@
-const fs = require('fs');
+const express = require('express');
+const Razorpay = require('razorpay');
+const bodyParser = require('body-parser');
 const path = require('path');
+const fs = require('fs');
+const { validateWebhookSignature } = require('razorpay/dist/utils/razorpay-utils');
 
-// Simple static handler for the payment-app directory
-const PUBLIC_DIR = path.join(__dirname);
+const app = express();
 
-const mime = {
-  '.html': 'text/html',
-  '.js': 'application/javascript',
-  '.css': 'text/css',
-  '.json': 'application/json',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon',
-};
+const port = process.env.PORT || 8000;
 
-module.exports = async (req, res) => {
-  try {
-    let urlPath = req.url.split('?')[0];
-    if (urlPath === '/' || urlPath === '') urlPath = '/index.html';
-    // prevent directory traversal
-    urlPath = path.normalize(urlPath).replace(/^\.+/, '');
-    const filePath = path.join(PUBLIC_DIR, urlPath);
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 
-    if (!filePath.startsWith(PUBLIC_DIR)) {
-      res.statusCode = 403;
-      res.end('Forbidden');
-      return;
-    }
+// Serve static files from payment-app directory
+app.use(express.static(path.join(__dirname)));
 
-    if (!fs.existsSync(filePath)) {
-      res.statusCode = 404;
-      res.end('Not found');
-      return;
-    }
+// Razorpay credentials — prefer environment variables in production
+const razorpayKeyId = process.env.RAZORPAY_KEY_ID || 'rzp_test_RhgWyIytKKhX4f';
+const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET || 'NDGRWyroLb2J5goY5ogxVJ9w';
+const razorpay = new Razorpay({ key_id: razorpayKeyId, key_secret: razorpayKeySecret });
 
-    const ext = path.extname(filePath).toLowerCase();
-    const contentType = mime[ext] || 'application/octet-stream';
-    const data = fs.readFileSync(filePath);
-    res.setHeader('Content-Type', contentType);
-    res.statusCode = 200;
-    res.end(data);
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error('payment-app handler error', err && err.message ? err.message : err);
-    res.statusCode = 500;
-    res.end('Internal Server Error');
+// Function to read data from JSON file
+const ORDERS_FILE = path.join(__dirname, 'orders.json');
+
+const readData = () => {
+  if (fs.existsSync(ORDERS_FILE)) {
+    const data = fs.readFileSync(ORDERS_FILE, 'utf8');
+    return JSON.parse(data || '[]');
   }
+  return [];
 };
+
+// Function to write data to JSON file
+const writeData = (data) => {
+  fs.writeFileSync(ORDERS_FILE, JSON.stringify(data, null, 2));
+};
+
+// Initialize orders.json if it doesn't exist
+if (!fs.existsSync(ORDERS_FILE)) {
+  writeData([]);
+}
+
+// Route to handle order creation
+app.post('/create-order', async (req, res) => {
+  try {
+    const { amount, currency = 'INR', receipt, notes } = req.body || {};
+    const numericAmount = Number(amount);
+    if (!numericAmount || numericAmount <= 0) {
+      return res.status(400).json({ message: 'Invalid amount' });
+    }
+
+    const options = {
+      amount: Math.round(numericAmount * 100), // Convert amount to paise
+      currency,
+      receipt: receipt || `rcpt_${Date.now()}`,
+      notes: notes || {},
+    };
+
+    const order = await razorpay.orders.create(options);
+
+    // Persist to local orders.json for lightweight tracking (optional)
+    const orders = readData();
+    orders.push({
+      order_id: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      receipt: order.receipt,
+      status: 'created',
+    });
+    writeData(orders);
+
+    return res.json(order); // Send order details to frontend, including order ID
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('create-order error', error && error.message ? error.message : error);
+    return res.status(500).json({ message: 'Error creating order' });
+  }
+});
+
+// Route to serve the success page
+app.get('/payment-success', (req, res) => {
+  res.sendFile(path.join(__dirname, 'success.html'));
+});
+
+// Route to handle payment verification
+app.post('/verify-payment', (req, res) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body || {};
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({ message: 'Missing fields' });
+    }
+
+    const secret = razorpayKeySecret;
+    const payload = `${razorpay_order_id}|${razorpay_payment_id}`;
+    const isValidSignature = validateWebhookSignature(payload, razorpay_signature, secret);
+    if (!isValidSignature) return res.status(400).json({ message: 'Invalid signature' });
+
+    // Update the order with payment details (local store)
+    const orders = readData();
+    const order = orders.find((o) => o.order_id === razorpay_order_id);
+    if (order) {
+      order.status = 'paid';
+      order.payment_id = razorpay_payment_id;
+      writeData(orders);
+    }
+
+    return res.status(200).json({ status: 'ok' });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('verify-payment error', error && error.message ? error.message : error);
+    return res.status(500).json({ status: 'error', message: 'Error verifying payment' });
+  }
+});
+
+// Start server only when run directly. If required as a module, export the app.
+
+app.listen(port, () => {
+  // eslint-disable-next-line no-console
+  console.log(`Payment app listening on port ${port}`);
+});
+
+module.exports = app;
