@@ -12,12 +12,12 @@
   ],
   "routes": [
     {
-      "src": "/(.*)",
-      "dest": "src/index.js"
-    },
-    {
       "src": "/payment-app/(.*)",
       "dest": "payment-app/index.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "src/index.js"
     }
   ]
 }
