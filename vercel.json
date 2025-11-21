@@ -6,14 +6,14 @@
       "use": "@vercel/node"
     },
     {
-      "src": "payment-app/index.js",
+      "src": "payment-app/app.js",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
       "src": "/payment-app/(.*)",
-      "dest": "payment-app/index.js"
+      "dest": "payment-app/app.js"
     },
     {
       "src": "/(.*)",
