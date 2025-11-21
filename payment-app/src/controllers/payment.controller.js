@@ -11,6 +11,7 @@ try {
 }
 
 async function createOrder(req, res, next) {
+  console.log('createOrder called with body:', req.body);
   try {
     const { amount, currency = 'INR', receipt, notes } = req.body || {};
     const numericAmount = Number(amount);

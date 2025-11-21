@@ -15,7 +15,7 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // Serve static files from payment-app directory
-app.use(express.static(path.join(__dirname, 'public')));
+app.use('/rzp', express.static(path.join(__dirname, 'public')));
 
 
 mongoose.set('strictQuery', false);
@@ -31,7 +31,7 @@ connectDB(mongodbUri).catch((err) => {
 // Mount payment routes
 const paymentRoutes = require('./src/routes/payment.route');
 
-app.use('/', paymentRoutes);
+app.use('/v1', paymentRoutes);
 
 // Route to serve the success page
 app.get('/payment-success', (req, res) => {
