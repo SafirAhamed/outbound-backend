@@ -7,7 +7,7 @@ const { validateWebhookSignature } = require('razorpay/dist/utils/razorpay-utils
 
 const app = express();
 
-const port = process.env.PORT || 8000;
+const port = process.env.PAYMENT_APP_PORT || 8000;
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
