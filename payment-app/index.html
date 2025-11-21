@@ -18,8 +18,8 @@
     async function payNow() {
       const amount = document.getElementById('amount').value;
 
-      // Create order by calling the server endpoint
-      const response = await fetch('/create-order', {
+      // Create order by calling the server endpoint (Vercel serverless API)
+      const response = await fetch('/v1/payments/create-order', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -37,7 +37,8 @@
         name: 'Your Company Name',
         description: 'Test Transaction',
         order_id: order.id, // This is the order_id created in the backend
-        callback_url: 'http://localhost:3000/payment-success', // Your success URL
+  // Use the current origin so this works in any environment (dev, staging, production)
+  callback_url: window.location.origin + '/payment-success',
         prefill: {
           name: 'Your Name',
           email: 'your.email@example.com',
@@ -48,7 +49,7 @@
         },
         handler: function (response) {
           const orderId = response.razorpay_order_id;
-          fetch('/verify-payment', {
+          fetch('/v1/payments/verify-payment', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
