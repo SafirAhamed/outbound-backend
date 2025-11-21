@@ -113,8 +113,6 @@ app.post('/verify-payment', (req, res) => {
   }
 });
 
-// Start server only when run directly. If required as a module, export the app.
-
 app.listen(port, () => {
   // eslint-disable-next-line no-console
   console.log(`Payment app listening on port ${port}`);
