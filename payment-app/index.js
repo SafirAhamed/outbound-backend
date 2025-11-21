@@ -18,7 +18,7 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // Serve static files from payment-app directory
-app.use(express.static(path.join(__dirname)));
+app.use('/rzp', express.static(path.join(__dirname)));
 
 // Razorpay credentials — prefer environment variables in production
 const razorpayKeyId = process.env.RAZORPAY_KEY_ID || 'rzp_test_RhgWyIytKKhX4f';
@@ -33,7 +33,7 @@ try {
 }
 
 // MongoDB connection
-const mongoUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/payment-app';
+const mongoUri = process.env.MONGODB_URL || 'mongodb://127.0.0.1:27017/payment-app';
 
 mongoose.set('strictQuery', false);
 // Load Order model from models folder
