@@ -7,11 +7,11 @@ const paymentSchema = new mongoose.Schema(
       ref: 'User',
       required: true,
     },
-    tour: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Tour',
-      required: true,
-    },
+    // tour: {
+    //   type: mongoose.Schema.Types.ObjectId,
+    //   ref: 'Tour',
+    //   required: true,
+    // },
     amount: {
       type: Number,
       required: true,

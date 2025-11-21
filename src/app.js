@@ -31,6 +31,11 @@ app.use(express.json());
 const webhookController = require('./controllers/webhook.controller');
 app.post('/v1/webhooks/razorpay', express.raw({ type: 'application/json' }), webhookController.razorpayWebhook);
 
+
+// Proxy /payment-app to a separate payment-app service (recommended for isolation)
+const paymentAppProxy = require('./middlewares/payment');
+app.use('/payment-app', paymentAppProxy);
+
 // parse urlencoded request body
 app.use(express.urlencoded({ extended: true }));
 
