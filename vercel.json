@@ -4,17 +4,9 @@
     {
       "src": "src/index.js",
       "use": "@vercel/node"
-    },
-    {
-      "src": "payment-app/index.js",
-      "use": "@vercel/node"
     }
   ],
   "routes": [
-    {
-      "src": "/payment-app/(.*)",
-      "dest": "payment-app/index.js"
-    },
     {
       "src": "/(.*)",
       "dest": "src/index.js"
