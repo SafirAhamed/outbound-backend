@@ -2,10 +2,15 @@ const express = require('express');
 const Razorpay = require('razorpay');
 const bodyParser = require('body-parser');
 const path = require('path');
-const fs = require('fs');
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
 const { validateWebhookSignature } = require('razorpay/dist/utils/razorpay-utils');
 
+/* eslint-disable camelcase */
+
 const app = express();
+
+dotenv.config();
 
 const port = process.env.PAYMENT_APP_PORT || 8000;
 
@@ -18,31 +23,35 @@ app.use(express.static(path.join(__dirname)));
 // Razorpay credentials — prefer environment variables in production
 const razorpayKeyId = process.env.RAZORPAY_KEY_ID || 'rzp_test_RhgWyIytKKhX4f';
 const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET || 'NDGRWyroLb2J5goY5ogxVJ9w';
-const razorpay = new Razorpay({ key_id: razorpayKeyId, key_secret: razorpayKeySecret });
-
-// Function to read data from JSON file
-const ORDERS_FILE = path.join(__dirname, 'orders.json');
-
-const readData = () => {
-  if (fs.existsSync(ORDERS_FILE)) {
-    const data = fs.readFileSync(ORDERS_FILE, 'utf8');
-    return JSON.parse(data || '[]');
-  }
-  return [];
-};
-
-// Function to write data to JSON file
-const writeData = (data) => {
-  fs.writeFileSync(ORDERS_FILE, JSON.stringify(data, null, 2));
-};
-
-// Initialize orders.json if it doesn't exist
-if (!fs.existsSync(ORDERS_FILE)) {
-  writeData([]);
+const { paymentService, orderService } = require('./services');
+let razorpay;
+try {
+  razorpay = paymentService.createRazorpayInstance(razorpayKeyId, razorpayKeySecret);
+} catch (e) {
+  // eslint-disable-next-line no-console
+  console.warn('Could not initialize Razorpay instance:', e && e.message ? e.message : e);
 }
 
+// MongoDB connection
+const mongoUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/payment-app';
+
+mongoose.set('strictQuery', false);
+// Load Order model from models folder
+const { Order } = require('./models');
+
+// Connect to MongoDB before handling requests
+mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => {
+    // eslint-disable-next-line no-console
+    console.log('Connected to MongoDB at', mongoUri);
+  })
+  .catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error('MongoDB connection error:', err && err.message ? err.message : err);
+  });
+
 // Route to handle order creation
-app.post('/create-order', async (req, res) => {
+app.post('/create-order', async (req, res, next) => {
   try {
     const { amount, currency = 'INR', receipt, notes } = req.body || {};
     const numericAmount = Number(amount);
@@ -57,24 +66,25 @@ app.post('/create-order', async (req, res) => {
       notes: notes || {},
     };
 
-    const order = await razorpay.orders.create(options);
+    if (!razorpay) {
+      return res.status(500).json({ message: 'Payment gateway not initialized' });
+    }
 
-    // Persist to local orders.json for lightweight tracking (optional)
-    const orders = readData();
-    orders.push({
-      order_id: order.id,
-      amount: order.amount,
-      currency: order.currency,
-      receipt: order.receipt,
-      status: 'created',
-    });
-    writeData(orders);
+    const order = await paymentService.createOrder(razorpay, options);
 
-    return res.json(order); // Send order details to frontend, including order ID
+    // Persist to MongoDB for lightweight tracking
+    try {
+      await orderService.saveOrderFromRazorpay(order);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('Could not persist order to MongoDB:', e && e.message ? e.message : e);
+    }
+
+    return res.json(order);
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('create-order error', error && error.message ? error.message : error);
-    return res.status(500).json({ message: 'Error creating order' });
+    return next(error);
   }
 });
 
@@ -84,7 +94,7 @@ app.get('/payment-success', (req, res) => {
 });
 
 // Route to handle payment verification
-app.post('/verify-payment', (req, res) => {
+app.post('/verify-payment', async (req, res, next) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body || {};
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
@@ -96,21 +106,33 @@ app.post('/verify-payment', (req, res) => {
     const isValidSignature = validateWebhookSignature(payload, razorpay_signature, secret);
     if (!isValidSignature) return res.status(400).json({ message: 'Invalid signature' });
 
-    // Update the order with payment details (local store)
-    const orders = readData();
-    const order = orders.find((o) => o.order_id === razorpay_order_id);
-    if (order) {
-      order.status = 'paid';
-      order.payment_id = razorpay_payment_id;
-      writeData(orders);
+    // Update the order with payment details in MongoDB
+    try {
+      await Order.findOneAndUpdate(
+        { order_id: razorpay_order_id },
+        { $set: { status: 'paid', payment_id: razorpay_payment_id } },
+        { new: true }
+      ).exec();
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('Failed to update order in DB:', e && e.message ? e.message : e);
     }
 
     return res.status(200).json({ status: 'ok' });
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('verify-payment error', error && error.message ? error.message : error);
-    return res.status(500).json({ status: 'error', message: 'Error verifying payment' });
+    return next(error);
   }
+});
+
+// Centralized error handler
+/* eslint-disable-next-line no-unused-vars */
+app.use((err, req, res, next) => {
+  // eslint-disable-next-line no-console
+  console.error('Unhandled error:', err && err.stack ? err.stack : err);
+  const status = err && err.status ? err.status : 500;
+  res.status(status).json({ error: err && err.message ? err.message : 'Internal Server Error' });
 });
 
 app.listen(port, () => {
