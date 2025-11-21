@@ -6,7 +6,7 @@ const paymentAppTarget = process.env.PAYMENT_APP_URL || 'http://localhost:8000';
 const paymentAppProxy = createProxyMiddleware({
     target: paymentAppTarget,
     changeOrigin: true,
-    pathRewrite: { '^/payment-app': '' },
+    pathRewrite: { '^/payment': '' },
     onProxyReq(proxyReq, req, res) {
       // Forward original Authorization header if present
       const authHeader = req.headers.authorization;
