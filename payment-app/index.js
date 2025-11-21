@@ -1,28 +1,24 @@
 const express = require('express');
-const Razorpay = require('razorpay');
 const bodyParser = require('body-parser');
 const path = require('path');
 const mongoose = require('mongoose');
-const dotenv = require('dotenv');
 const { validateWebhookSignature } = require('razorpay/dist/utils/razorpay-utils');
+const config = require('./config');
+const { createOrderRules, verifyPaymentRules, validate } = require('./validators/order.validation');
 
 /* eslint-disable camelcase */
 
 const app = express();
 
-dotenv.config();
-
-const port = process.env.PAYMENT_APP_PORT || 8000;
+const { port, mongodbUri, razorpayKeyId, razorpayKeySecret } = config;
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // Serve static files from payment-app directory
-app.use('/rzp', express.static(path.join(__dirname)));
+app.use(express.static(path.join(__dirname)));
 
-// Razorpay credentials — prefer environment variables in production
-const razorpayKeyId = process.env.RAZORPAY_KEY_ID || 'rzp_test_RhgWyIytKKhX4f';
-const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET || 'NDGRWyroLb2J5goY5ogxVJ9w';
+// Razorpay credentials and services
 const { paymentService, orderService } = require('./services');
 let razorpay;
 try {
@@ -33,11 +29,11 @@ try {
 }
 
 // MongoDB connection
-const mongoUri = process.env.MONGODB_URL || 'mongodb://127.0.0.1:27017/payment-app';
+const mongoUri = mongodbUri;
 
 mongoose.set('strictQuery', false);
-// Load Order model from models folder
-const { Order } = require('./models');
+// validators
+// (validation middleware applied on routes below)
 
 // Connect to MongoDB before handling requests
 mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
@@ -51,7 +47,7 @@ mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
   });
 
 // Route to handle order creation
-app.post('/create-order', async (req, res, next) => {
+app.post('/create-order', createOrderRules, validate, async (req, res, next) => {
   try {
     const { amount, currency = 'INR', receipt, notes } = req.body || {};
     const numericAmount = Number(amount);
@@ -70,7 +66,7 @@ app.post('/create-order', async (req, res, next) => {
       return res.status(500).json({ message: 'Payment gateway not initialized' });
     }
 
-    const order = await paymentService.createOrder(razorpay, options);
+  const order = await paymentService.createOrder(razorpay, options);
 
     // Persist to MongoDB for lightweight tracking
     try {
@@ -94,7 +90,7 @@ app.get('/payment-success', (req, res) => {
 });
 
 // Route to handle payment verification
-app.post('/verify-payment', async (req, res, next) => {
+app.post('/verify-payment', verifyPaymentRules, validate, async (req, res, next) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body || {};
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
@@ -106,13 +102,9 @@ app.post('/verify-payment', async (req, res, next) => {
     const isValidSignature = validateWebhookSignature(payload, razorpay_signature, secret);
     if (!isValidSignature) return res.status(400).json({ message: 'Invalid signature' });
 
-    // Update the order with payment details in MongoDB
+    // Update the order with payment details in MongoDB via service
     try {
-      await Order.findOneAndUpdate(
-        { order_id: razorpay_order_id },
-        { $set: { status: 'paid', payment_id: razorpay_payment_id } },
-        { new: true }
-      ).exec();
+      await orderService.markOrderPaid(razorpay_order_id, razorpay_payment_id);
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn('Failed to update order in DB:', e && e.message ? e.message : e);
