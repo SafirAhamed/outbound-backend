@@ -39,7 +39,8 @@ const getMyLibrary = catchAsync(async (req, res) => {
   if (!userWithLibrary) {
     throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
   }
-  res.send({ success: true, data: userWithLibrary.purchasedBooks });
+  // Return a consistent shape: { purchasedBooks: [...] }
+  res.status(httpStatus.OK).send({ purchasedBooks: userWithLibrary.purchasedBooks });
 });
 
 const getMe = catchAsync(async (req, res) => {
