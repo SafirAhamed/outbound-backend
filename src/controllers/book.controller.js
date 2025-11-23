@@ -1,3 +1,4 @@
+const logger = require('../config/logger');
 const Book = require('../models/book.model');
 const catchAsync = require('../utils/catchAsync');
 
@@ -99,24 +100,32 @@ const createBookOrder = catchAsync(async (req, res) => {
   const paymentAppUrl = require('../config/config').paymentAppUrl;
 
   // call payment-app to create an order
-  const createOrderUrl = `${paymentAppUrl.replace(/\/$/, '')}/payments/create-order`;
+  const createOrderUrl = `${paymentAppUrl.replace(/\/$/, '')}/v1/payments/create-order`;
+  logger.info(`Creating book order via payment app at ${createOrderUrl}`);
   const resp = await fetch(createOrderUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       amount,
       currency: 'INR',
-      receipt: `book_${bookId}_${Date.now()}`,
+      receipt: `book_${Date.now()}`,
       notes: { bookId, userId: user.id },
     }),
   });
 
   if (!resp.ok) {
+    try {
+      const errorBody = await resp.json();
+      logger.error('Payment app create order error:', errorBody);
+    } catch (e) {
+      logger.error('Payment app create order error, non-JSON response');
+    }
     const body = await resp.text();
     return res.status(502).json({ success: false, message: 'Payment provider error', details: body });
   }
 
   const order = await resp.json();
+  logger.info(`Created book order ${order.id} for user ${user.id} and book ${bookId}`);
 
   // create Payment document in main app to track order and associate book
   const Payment = require('../models/payment.model');
