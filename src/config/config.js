@@ -25,6 +25,14 @@ const envVarsSchema = Joi.object()
     EMAIL_FROM: Joi.string().description('the from field in the emails sent by the app'),
     RAZORPAY_KEY_ID: Joi.string().description('Razorpay Key ID'),
     RAZORPAY_KEY_SECRET: Joi.string().description('Razorpay Key Secret'),
+    GOOGLE_CLIENT_ID: Joi.string().description('Google OAuth Client ID'),
+    GOOGLE_CLIENT_SECRET: Joi.string().description('Google OAuth Client Secret'),
+    GOOGLE_CALLBACK_URL: Joi.string().description('Google OAuth callback URL (backend)'),
+    FRONTEND_URL: Joi.string().description('Frontend base URL for redirects'),
+    COOKIE_NAME: Joi.string().description('Name of the auth cookie'),
+    COOKIE_SECURE: Joi.boolean().description('Whether auth cookie should be secure'),
+    COOKIE_DOMAIN: Joi.string().description('Domain for auth cookie'),
+    PAYMENT_APP_URL: Joi.string().description('Payment app base URL'),
   })
   .unknown();
 
@@ -67,4 +75,18 @@ module.exports = {
     keyId: envVars.RAZORPAY_KEY_ID,
     keySecret: envVars.RAZORPAY_KEY_SECRET,
   },
+  oauth: {
+    google: {
+      clientId: envVars.GOOGLE_CLIENT_ID,
+      clientSecret: envVars.GOOGLE_CLIENT_SECRET,
+      callbackUrl: envVars.GOOGLE_CALLBACK_URL,
+    },
+    frontendUrl: envVars.FRONTEND_URL,
+  },
+  cookie: {
+    name: envVars.COOKIE_NAME || 'accessToken',
+    secure: envVars.COOKIE_SECURE === 'true' || envVars.NODE_ENV === 'production',
+    domain: envVars.COOKIE_DOMAIN || undefined,
+  },
+  paymentAppUrl: envVars.PAYMENT_APP_URL || process.env.PAYMENT_APP_URL || 'http://localhost:8000',
 };

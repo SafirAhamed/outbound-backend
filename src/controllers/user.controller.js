@@ -34,10 +34,28 @@ const deleteUser = catchAsync(async (req, res) => {
   res.status(httpStatus.NO_CONTENT).send();
 });
 
+const getMyLibrary = catchAsync(async (req, res) => {
+  const userWithLibrary = await userService.getUserWithLibrary(req.user.id);
+  if (!userWithLibrary) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
+  }
+  res.send({ success: true, data: userWithLibrary.purchasedBooks });
+});
+
+const getMe = catchAsync(async (req, res) => {
+  const user = await userService.getUserById(req.user.id);
+  if (!user) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
+  }
+  res.send({ success: true, data: user });
+});
+
 module.exports = {
   createUser,
   getUsers,
   getUser,
   updateUser,
   deleteUser,
+  getMyLibrary,
+  getMe,
 };

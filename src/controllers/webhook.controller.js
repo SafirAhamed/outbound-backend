@@ -40,6 +40,25 @@ exports.razorpayWebhook = async (req, res) => {
             payment: payment._id,
           });
         }
+        // If this payment was for a book, add to user's purchasedBooks
+        try {
+          if (payment.book) {
+            const User = require('../models/user.model');
+            const user = await User.findById(payment.user);
+            if (user) {
+              user.purchasedBooks = user.purchasedBooks || [];
+              const hasBook = user.purchasedBooks.some((b) => b.toString() === payment.book.toString());
+              if (!hasBook) {
+                user.purchasedBooks.push(payment.book);
+                await user.save();
+              }
+            }
+          }
+        } catch (e) {
+          // swallow errors adding book to user but log
+          // eslint-disable-next-line no-console
+          console.warn('Failed to add purchased book to user:', e && e.message ? e.message : e);
+        }
       }
     }
 

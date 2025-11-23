@@ -55,3 +55,81 @@ exports.deleteBook = catchAsync(async (req, res) => {
   }
   res.status(204).json({ success: true, data: null });
 });
+
+// Purchase a book (adds to user's purchasedBooks)
+const purchaseBook = catchAsync(async (req, res) => {
+  const user = req.user; // set by auth middleware
+  const bookId = req.params.id;
+  const book = await Book.findById(bookId);
+  if (!book) {
+    return res.status(404).json({ success: false, message: 'Book not found' });
+  }
+
+  // Prevent duplicates
+  const hasBook = user.purchasedBooks && user.purchasedBooks.some((b) => b.toString() === bookId);
+  if (hasBook) {
+    return res.status(200).json({ success: true, message: 'Book already purchased', data: user.purchasedBooks });
+  }
+
+  user.purchasedBooks = user.purchasedBooks || [];
+  user.purchasedBooks.push(bookId);
+  await user.save();
+
+  res.status(200).json({ success: true, message: 'Book purchased', data: book });
+});
+
+// Export the purchaseBook function
+exports.purchaseBook = purchaseBook;
+
+// Create a Razorpay order for purchasing a book (proxied to payment-app). Returns order details for frontend.
+const createBookOrder = catchAsync(async (req, res) => {
+  const user = req.user;
+  const bookId = req.params.id;
+  const book = await Book.findById(bookId);
+  if (!book) {
+    return res.status(404).json({ success: false, message: 'Book not found' });
+  }
+
+  // parse amount from book.price (string) to number
+  const amount = Number.parseFloat(book.price);
+  if (Number.isNaN(amount) || amount <= 0) {
+    return res.status(400).json({ success: false, message: 'Invalid book price' });
+  }
+
+  const paymentAppUrl = require('../config/config').paymentAppUrl;
+
+  // call payment-app to create an order
+  const createOrderUrl = `${paymentAppUrl.replace(/\/$/, '')}/payments/create-order`;
+  const resp = await fetch(createOrderUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      amount,
+      currency: 'INR',
+      receipt: `book_${bookId}_${Date.now()}`,
+      notes: { bookId, userId: user.id },
+    }),
+  });
+
+  if (!resp.ok) {
+    const body = await resp.text();
+    return res.status(502).json({ success: false, message: 'Payment provider error', details: body });
+  }
+
+  const order = await resp.json();
+
+  // create Payment document in main app to track order and associate book
+  const Payment = require('../models/payment.model');
+  const paymentDoc = await Payment.create({
+    user: user.id,
+    amount: Math.round(amount * 100) / 100,
+    currency: order.currency || 'INR',
+    razorpayOrderId: order.id,
+    status: 'created',
+    book: bookId,
+  });
+
+  res.status(201).json({ success: true, order, payment: paymentDoc });
+});
+
+exports.createBookOrder = createBookOrder;

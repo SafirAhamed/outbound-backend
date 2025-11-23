@@ -15,6 +15,23 @@ const createUser = async (userBody) => {
 };
 
 /**
+ * Get or create a user from OAuth provider data
+ * @param {Object} options
+ * @param {string} options.email
+ * @param {string} options.name
+ * @returns {Promise<User>}
+ */
+const getOrCreateOAuthUser = async ({ email, name }) => {
+  let user = await User.findOne({ email });
+  if (user) return user;
+
+  // Create a user with a random password (not used for OAuth login)
+  const randomPassword = Math.random().toString(36).slice(-12) + 'A1';
+  user = await User.create({ name, email, password: randomPassword, isEmailVerified: true });
+  return user;
+};
+
+/**
  * Query for users
  * @param {Object} filter - Mongo filter
  * @param {Object} options - Query options
@@ -86,4 +103,12 @@ module.exports = {
   getUserByEmail,
   updateUserById,
   deleteUserById,
+  getOrCreateOAuthUser,
+  /**
+   * Get user by id and populate purchasedBooks
+   * @param {ObjectId} id
+   */
+  getUserWithLibrary: async (id) => {
+    return User.findById(id).populate('purchasedBooks').exec();
+  },
 };

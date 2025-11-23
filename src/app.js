@@ -9,6 +9,7 @@ const httpStatus = require('http-status');
 const config = require('./config/config');
 const morgan = require('./config/morgan');
 const { jwtStrategy } = require('./config/passport');
+const setupGoogleStrategy = require('./config/passportGoogle');
 const { authLimiter } = require('./middlewares/rateLimiter');
 const routes = require('./routes/v1');
 const { errorConverter, errorHandler } = require('./middlewares/error');
@@ -46,13 +47,23 @@ app.use(mongoSanitize());
 // gzip compression
 app.use(compression());
 
-// enable cors
-app.use(cors());
-app.options('*', cors());
+// enable cors with credentials support for cookie-based auth
+const corsOptions = {};
+if (config.oauth && config.oauth.frontendUrl) {
+  corsOptions.origin = config.oauth.frontendUrl;
+} else {
+  corsOptions.origin = true;
+}
+corsOptions.credentials = true;
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // jwt authentication
 app.use(passport.initialize());
 passport.use('jwt', jwtStrategy);
+// register google strategy if configured
+const googleStrategy = setupGoogleStrategy();
+if (googleStrategy) passport.use('google', googleStrategy);
 
 // limit repeated failed requests to auth endpoints
 if (config.env === 'production') {

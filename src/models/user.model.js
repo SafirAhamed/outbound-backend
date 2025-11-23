@@ -44,6 +44,12 @@ const userSchema = mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    purchasedBooks: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Book',
+      },
+    ],
   },
   {
     timestamps: true,

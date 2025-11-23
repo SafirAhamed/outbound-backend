@@ -15,6 +15,42 @@ router.post('/reset-password', validate(authValidation.resetPassword), authContr
 router.post('/send-verification-email', auth(), authController.sendVerificationEmail);
 router.post('/verify-email', validate(authValidation.verifyEmail), authController.verifyEmail);
 
+// Google OAuth
+const passport = require('passport');
+const { tokenService } = require('../../services');
+const config = require('../../config/config');
+
+router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+
+router.get(
+	'/google/callback',
+	passport.authenticate('google', { session: false, failureRedirect: '/v1/auth/login' }),
+	async (req, res) => {
+		// user is attached to req by passport strategy
+			try {
+				const tokens = await tokenService.generateAuthTokens(req.user);
+				// set HttpOnly cookie with access token and redirect to frontend success page
+				const cookieName = (config.cookie && config.cookie.name) || 'accessToken';
+				const maxAge = new Date(tokens.access.expires).getTime() - Date.now();
+				const cookieOptions = {
+					httpOnly: true,
+					secure: !!(config.cookie && config.cookie.secure),
+					maxAge: Math.max(0, maxAge),
+				};
+				if (config.cookie && config.cookie.domain) cookieOptions.domain = config.cookie.domain;
+				// If frontend is cross-site we should set SameSite=None; cookieOptions.sameSite kept default unless domain differs
+				if (config.env === 'production') cookieOptions.sameSite = 'None';
+
+				res.cookie(cookieName, tokens.access.token, cookieOptions);
+
+				const redirectUrl = (config.oauth && config.oauth.frontendUrl) ? `${config.oauth.frontendUrl.replace(/\/$/, '')}/auth/success` : '/auth/success';
+				res.redirect(redirectUrl);
+			} catch (err) {
+				res.redirect('/v1/auth/login');
+			}
+	}
+);
+
 module.exports = router;
 
 /**
