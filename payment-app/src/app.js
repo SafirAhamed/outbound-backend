@@ -44,9 +44,10 @@ app.use('/v1', paymentRoutes);
 
 // Route to serve the success page
 app.get('/payment-success', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'success.html'));
+  res.sendFile(path.join(__dirname, '..', 'public', 'success.html'));
 });
 
+app.get('/files', express.static(path.join(__dirname, 'public')));
 // send back a 404 error for any unknown api request
 app.use((req, res, next) => {
   next(new ApiError(httpStatus.NOT_FOUND, 'Not found'));
