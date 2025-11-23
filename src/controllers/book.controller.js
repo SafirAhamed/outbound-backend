@@ -1,4 +1,5 @@
 const logger = require('../config/logger');
+const { Payment } = require('../models');
 const Book = require('../models/book.model');
 const catchAsync = require('../utils/catchAsync');
 
@@ -20,9 +21,15 @@ exports.getBooks = catchAsync(async (req, res) => {
   const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
   const books = await Book.find(filter).skip(skip).limit(parseInt(limit, 10));
   const total = await Book.countDocuments(filter);
+  const purchasedBooks = await Payment.distinct('book', { book: { $ne: null } });
+
+  const resultBooks = books.map((book) => {
+    const isPurchased = purchasedBooks.some((b) => b.toString() === book._id.toString());
+    return { ...book.toObject(), isPurchased };
+  });
   res.status(200).json({
     success: true,
-    data: books,
+    data: resultBooks,
     page: parseInt(page, 10),
     limit: parseInt(limit, 10),
     total,
