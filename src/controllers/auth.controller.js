@@ -94,6 +94,23 @@ const verifyEmail = catchAsync(async (req, res) => {
   res.status(httpStatus.NO_CONTENT).send();
 });
 
+const sendOtp = catchAsync(async (req, res) => {
+  const { mobile } = req.body || {};
+  if (!mobile) return res.status(httpStatus.BAD_REQUEST).json({ message: 'mobile is required' });
+  await authService.sendOtp(mobile);
+  res.status(httpStatus.OK).send({ success: true, message: 'OTP sent' });
+});
+
+const verifyOtp = catchAsync(async (req, res) => {
+  const { mobile, otp } = req.body || {};
+  if (!mobile || !otp) return res.status(httpStatus.BAD_REQUEST).json({ message: 'mobile and otp are required' });
+  const token = await authService.verifyOtp(mobile, otp);
+  if (!token) return res.status(httpStatus.UNAUTHORIZED).json({ success: false, message: 'Invalid or expired OTP' });
+  // set session cookie (httpOnly) and return token in body for convenience
+  res.cookie('session_token', token, { httpOnly: true, sameSite: 'lax' });
+  res.status(httpStatus.OK).send({ success: true, token });
+});
+
 module.exports = {
   register,
   login,
@@ -104,4 +121,6 @@ module.exports = {
   sendVerificationEmail,
   verifyEmail,
   logoutCookie,
+  sendOtp,
+  verifyOtp,
 };

@@ -33,6 +33,9 @@ const envVarsSchema = Joi.object()
     COOKIE_SECURE: Joi.boolean().description('Whether auth cookie should be secure'),
     COOKIE_DOMAIN: Joi.string().description('Domain for auth cookie'),
     PAYMENT_APP_URL: Joi.string().description('Payment app base URL'),
+    TWILIO_ACCOUNT_SID: Joi.string().description('Twilio account SID'),
+    TWILIO_AUTH_TOKEN: Joi.string().description('Twilio auth token'),
+    TWILIO_FROM: Joi.string().description('Twilio phone number to send SMS from'),
   })
   .unknown();
 
@@ -82,6 +85,11 @@ module.exports = {
       callbackUrl: envVars.GOOGLE_CALLBACK_URL,
     },
     frontendUrl: envVars.FRONTEND_URL,
+  },
+  twilio: {
+    accountSid: envVars.TWILIO_ACCOUNT_SID || process.env.TWILIO_ACCOUNT_SID,
+    authToken: envVars.TWILIO_AUTH_TOKEN || process.env.TWILIO_AUTH_TOKEN,
+    from: envVars.TWILIO_FROM || process.env.TWILIO_FROM,
   },
   cookie: {
     name: envVars.COOKIE_NAME || 'accessToken',

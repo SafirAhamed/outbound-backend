@@ -90,10 +90,80 @@ const verifyEmail = async (verifyEmailToken) => {
   }
 };
 
+// --- Simple OTP/session helpers (in-memory) -------------------------------
+// Note: For production, move to persistent store (Redis) and integrate SMS provider.
+const crypto = require('crypto');
+const config = require('../config/config');
+let twilioClient = null;
+try {
+  // require lazily so tests or environments without the package won't fail until used
+  // eslint-disable-next-line global-require, import/no-extraneous-dependencies
+  const Twilio = require('twilio');
+  if (config.twilio && config.twilio.accountSid && config.twilio.authToken) {
+    twilioClient = Twilio(config.twilio.accountSid, config.twilio.authToken);
+  }
+} catch (err) {
+  // twilio not installed or misconfigured; we'll fallback to console logging
+  twilioClient = null;
+}
+
+const otps = new Map(); // mobile -> { code, expiresAt }
+const sessions = new Map(); // token -> { mobile, createdAt }
+
+function generateCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function generateToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+const sendOtp = async (mobile) => {
+  const code = generateCode();
+  const expiresAt = Date.now() + 1000 * 60 * 5; // 5 minutes
+  otps.set(mobile, { code, expiresAt });
+
+  // If Twilio configured, attempt to send SMS
+  if (twilioClient && config.twilio && config.twilio.from) {
+    try {
+      await twilioClient.messages.create({
+        body: `Your verification code is ${code}`,
+        from: config.twilio.from,
+        to: mobile,
+      });
+      return true;
+    } catch (err) {
+      // Log and fall back to console output
+      console.error('[auth.service] Twilio send failed, falling back to console. Error:', err && err.message ? err.message : err);
+    }
+  }
+
+  // Fallback: log OTP to server console (for dev/testing)
+  console.info(`[auth.service] OTP for ${mobile}: ${code}`);
+  return true;
+};
+
+const verifyOtp = async (mobile, code) => {
+  const rec = otps.get(mobile);
+  if (!rec) return null;
+  if (Date.now() > rec.expiresAt) {
+    otps.delete(mobile);
+    return null;
+  }
+  if (String(code) !== rec.code) return null;
+  otps.delete(mobile);
+  const token = generateToken();
+  sessions.set(token, { mobile, createdAt: Date.now() });
+  return token;
+};
+
 module.exports = {
   loginUserWithEmailAndPassword,
   logout,
   refreshAuth,
   resetPassword,
   verifyEmail,
+  // OTP helpers (development)
+  sendOtp,
+  verifyOtp,
 };
