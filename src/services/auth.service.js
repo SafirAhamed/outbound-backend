@@ -94,17 +94,26 @@ const verifyEmail = async (verifyEmailToken) => {
 // Note: For production, move to persistent store (Redis) and integrate SMS provider.
 const crypto = require('crypto');
 const config = require('../config/config');
-let twilioClient = null;
-try {
-  // require lazily so tests or environments without the package won't fail until used
-  // eslint-disable-next-line global-require, import/no-extraneous-dependencies
-  const Twilio = require('twilio');
-  if (config.twilio && config.twilio.accountSid && config.twilio.authToken) {
-    twilioClient = Twilio(config.twilio.accountSid, config.twilio.authToken);
+
+function getTwilioClient() {
+  let twilioClient = null;
+  try {
+    // require lazily so tests or environments without the package won't fail until used
+    // eslint-disable-next-line global-require, import/no-extraneous-dependencies
+    if (config.twilio && !config.twilio.accountSid && !config.twilio.authToken) {
+      console.log('[auth.service] accountSid:', config.twilio.accountSid);
+      console.log('[auth.service] authToken:', config.twilio.authToken);
+      console.log('[auth.service] Twilio credentials not configured');
+      return null;
+    }
+    twilioClient = require('twilio')(config.twilio.accountSid, config.twilio.authToken);
+    console.log('[auth.service] Twilio client configured', twilioClient);
+  } catch (err) {
+    console.log(err);
+    // twilio not installed or misconfigured; we'll fallback to console logging
+    twilioClient = null;
   }
-} catch (err) {
-  // twilio not installed or misconfigured; we'll fallback to console logging
-  twilioClient = null;
+  return twilioClient;
 }
 
 const otps = new Map(); // mobile -> { code, expiresAt }
@@ -119,28 +128,43 @@ function generateToken() {
 }
 
 const sendOtp = async (mobile) => {
+  const twilioClient = await getTwilioClient();
+
+  if (!twilioClient) {
+    console.log(`[auth.service] Twilio client not configured, falling back to console output.`);
+    return false;
+  }
+  console.log(`[auth.service] twilioClient: 'configured'`);
+
   const code = generateCode();
   const expiresAt = Date.now() + 1000 * 60 * 5; // 5 minutes
   otps.set(mobile, { code, expiresAt });
 
   // If Twilio configured, attempt to send SMS
-  if (twilioClient && config.twilio && config.twilio.from) {
-    try {
-      await twilioClient.messages.create({
-        body: `Your verification code is ${code}`,
-        from: config.twilio.from,
-        to: mobile,
-      });
-      return true;
-    } catch (err) {
-      // Log and fall back to console output
-      console.error('[auth.service] Twilio send failed, falling back to console. Error:', err && err.message ? err.message : err);
-    }
+  if (config.twilio && !config.twilio.from) {
+    console.log(`[auth.service] Twilio 'from' number not configured, falling back to console output.`);
+    return false;
   }
-
-  // Fallback: log OTP to server console (for dev/testing)
-  console.info(`[auth.service] OTP for ${mobile}: ${code}`);
-  return true;
+  try {
+    const twilioPayload = {
+      body: `Your verification code is ${code}`,
+      from: config.twilio.from,
+      to: mobile,
+    };
+    console.log('[auth.service] Sending OTP via Twilio with payload:', twilioPayload);
+    await twilioClient.messages.create({
+      ...twilioPayload,
+    });
+    console.log(`[auth.service] Generated OTP for ${mobile}: ${code} (expires at ${new Date(expiresAt).toISOString()})`);
+    return true;
+  } catch (err) {
+    // Log and fall back to console output
+    console.error(
+      '[auth.service] Twilio send failed, falling back to console. Error:',
+      err && err.message ? err.message : err
+    );
+    return false;
+  }
 };
 
 const verifyOtp = async (mobile, code) => {
